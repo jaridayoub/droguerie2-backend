@@ -13,12 +13,13 @@ class SaleController extends Controller
 {
     public function index(Request $request)
     {
-        $query = Sale::with('user', 'client', 'items')->latest();
+        $query = Sale::with('user', 'client', 'items.product.category')->latest();
 
         if ($request->status) $query->where('status', $request->status);
         if ($request->date)   $query->whereDate('created_at', $request->date);
 
-        return response()->json($query->paginate(20));
+        $perPage = min((int)($request->per_page ?? 20), 2000);
+        return response()->json($query->paginate($perPage));
     }
 
     public function show(Sale $sale)
@@ -80,9 +81,12 @@ class SaleController extends Controller
 
             $status = $credit > 0 ? 'credit' : 'completed';
 
-            // Si client + crédit → mettre à jour la dette
+            // Si client + crédit → vérifier plafond puis mettre à jour la dette
             if ($credit > 0 && $request->client_id) {
                 $client = Client::findOrFail($request->client_id);
+                if ($client->credit_limit > 0 && ($client->credit_used + $credit) > $client->credit_limit) {
+                    abort(422, "Plafond de crédit dépassé. Disponible: " . number_format($client->credit_limit - $client->credit_used, 2) . " DH");
+                }
                 $client->increment('credit_used', $credit);
             }
 

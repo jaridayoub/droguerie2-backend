@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import api from '../api/axios';
-import { useAuth } from '../context/AuthContext'; 
+import { useAuth } from '../context/AuthContext';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts'; 
 
 export default function Dashboard() {
   const { isAdmin } = useAuth();
@@ -13,6 +14,8 @@ export default function Dashboard() {
   const [modalLoading, setModalLoading] = useState(false);
   const [totalCreditRestant, setTotalCreditRestant] = useState(null);
   const [topVendeur, setTopVendeur] = useState(null);
+  const [chartVentes, setChartVentes] = useState([]);
+  const [chartCategories, setChartCategories] = useState([]);
 
   useEffect(() => {
     api.get('/dashboard').then(res => setData(res.data)).finally(() => setLoading(false));
@@ -25,6 +28,8 @@ export default function Dashboard() {
     api.get('/sales', { params: { per_page: 2000 } }).then(res => {
       const sales = res.data.data || res.data || []
       const thisMonth = sales.filter(s => s.created_at?.startsWith(firstDay.slice(0, 7)))
+
+      // Top vendeur
       const grouped = {}
       thisMonth.forEach(s => {
         const uid = s.user_id || s.user?.id
@@ -35,6 +40,30 @@ export default function Dashboard() {
       })
       const sorted = Object.values(grouped).sort((a, b) => b.total - a.total)
       if (sorted.length > 0) setTopVendeur(sorted[0])
+
+      // Chart 1 — ventes semaine actuelle vs semaine passée (par jour)
+      const now2 = new Date()
+      const days = ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam']
+      const weekData = Array.from({ length: 7 }, (_, i) => {
+        const d = new Date(now2); d.setDate(now2.getDate() - 6 + i)
+        const dStr = d.toISOString().slice(0, 10)
+        const prevD = new Date(d); prevD.setDate(d.getDate() - 7)
+        const prevStr = prevD.toISOString().slice(0, 10)
+        const cur  = sales.filter(s => s.status !== 'cancelled' && s.created_at?.startsWith(dStr)).reduce((a, s) => a + (+s.total), 0)
+        const prev = sales.filter(s => s.status !== 'cancelled' && s.created_at?.startsWith(prevStr)).reduce((a, s) => a + (+s.total), 0)
+        return { jour: days[d.getDay()], 'Cette semaine': Math.round(cur * 100) / 100, 'Semaine passée': Math.round(prev * 100) / 100 }
+      })
+      setChartVentes(weekData)
+
+      // Chart 2 — ventes par catégorie ce mois
+      const catMap = {}
+      thisMonth.filter(s => s.status !== 'cancelled').forEach(s => {
+        (s.items || []).forEach(item => {
+          const cat = item.product?.category?.name || 'Autre'
+          catMap[cat] = (catMap[cat] || 0) + (+item.total || 0)
+        })
+      })
+      setChartCategories(Object.entries(catMap).map(([name, value]) => ({ name, value: Math.round(value * 100) / 100 })).sort((a, b) => b.value - a.value))
     }).catch(() => {})
   }, []);
 
@@ -79,7 +108,7 @@ export default function Dashboard() {
       {isAdmin() && (
         <div className="row g-3 mb-5">
           <div className="col-md-12">
-            <h6 className="fw-bold text-muted mb-3 small text-uppercase ls-1">Actions de Gestion (Admin Uniquement)</h6>
+            <h6 className="fw-bold text-muted mb-3 small text-uppercase ls-1">🛠️ Actions de Gestion</h6>
             <div className="d-flex flex-wrap gap-2">
               <Link to="/products" className="btn btn-white shadow-sm border-0 py-2 px-3 rounded-3 bg-white text-dark fw-bold small">
                 <i className="bi bi-plus-circle-fill text-primary me-2"></i>Ajouter Produit
@@ -145,6 +174,54 @@ export default function Dashboard() {
           </div>
         </div>
 
+      </div>
+
+      {/* ══════ CHARTS ══════ */}
+      <div className="row g-4 mb-4">
+        {/* Chart 1 — Comparaison semaines */}
+        <div className="col-md-7">
+          <div className="card border-0 shadow-sm rounded-4 p-3 h-100">
+            <h6 className="fw-bold text-uppercase small mb-3" style={{ color: '#0d1b4b' }}>
+              <i className="bi bi-bar-chart-line me-2 text-primary"></i>Ventes — Cette semaine vs Semaine passée
+            </h6>
+            {chartVentes.length === 0
+              ? <div className="text-center text-muted py-5"><i className="bi bi-bar-chart d-block mb-2" style={{ fontSize: 32 }}></i>Pas de données</div>
+              : <ResponsiveContainer width="100%" height={220}>
+                  <BarChart data={chartVentes} barCategoryGap="30%">
+                    <XAxis dataKey="jour" tick={{ fontSize: 11 }} />
+                    <YAxis tick={{ fontSize: 11 }} width={55} tickFormatter={v => v + ' DH'} />
+                    <Tooltip formatter={(v) => v.toFixed(2) + ' DH'} />
+                    <Legend />
+                    <Bar dataKey="Cette semaine" fill="#0d1b4b" radius={[4,4,0,0]} />
+                    <Bar dataKey="Semaine passée" fill="#ffb400" radius={[4,4,0,0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+            }
+          </div>
+        </div>
+
+        {/* Chart 2 — Ventes par catégorie */}
+        <div className="col-md-5">
+          <div className="card border-0 shadow-sm rounded-4 p-3 h-100">
+            <h6 className="fw-bold text-uppercase small mb-3" style={{ color: '#0d1b4b' }}>
+              <i className="bi bi-pie-chart me-2 text-warning"></i>Ventes par catégorie (ce mois)
+            </h6>
+            {chartCategories.length === 0
+              ? <div className="text-center text-muted py-5"><i className="bi bi-pie-chart d-block mb-2" style={{ fontSize: 32 }}></i>Pas de données</div>
+              : <ResponsiveContainer width="100%" height={220}>
+                  <PieChart>
+                    <Pie data={chartCategories} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} label={({ name, percent }) => `${name} ${(percent*100).toFixed(0)}%`} labelLine={false}>
+                      {chartCategories.map((_, i) => (
+                        <Cell key={i} fill={['#0d1b4b','#ffb400','#198754','#dc3545','#0dcaf0','#6f42c1','#fd7e14'][i % 7]} />
+                      ))}
+                    </Pie>
+                    <Tooltip formatter={(v) => v.toFixed(2) + ' DH'} />
+                    <Legend />
+                  </PieChart>
+                </ResponsiveContainer>
+            }
+          </div>
+        </div>
       </div>
 
       {/* ══════ RECENT ACTIVITY ══════ */}
@@ -234,7 +311,7 @@ export default function Dashboard() {
                         </tr></thead>
                         <tbody>
                           {modalData.map(c => (
-                            <tr key={c.id} className="small" style={{ cursor: 'pointer' }} onClick={() => { setModal(null); navigate('/clients'); }}>
+                            <tr key={c.id} className="small" style={{ cursor: 'pointer' }} onClick={() => { setModal(null); navigate('/clients', { state: { openCreditId: c.id } }); }}>
                               <td className="fw-bold" style={{ color: 'var(--tsk-blue)' }}>{c.name}</td>
                               <td>{c.phone || '—'}</td>
                               <td><span className="badge bg-warning fw-oswald">{(+c.credit_used).toFixed(2)} DH</span></td>

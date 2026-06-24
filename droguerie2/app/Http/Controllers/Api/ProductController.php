@@ -47,13 +47,12 @@ class ProductController extends Controller
             'barcode'     => 'nullable|string|unique:products',
             'description' => 'nullable|string',
             'price'       => 'required|numeric|min:0',
-            'cost_price'  => 'nullable|numeric|min:0',
+            'cost_price'  => 'nullable|numeric|min:0|lt:price',
             'stock'       => 'required|integer|min:0',
             'stock_alert' => 'nullable|integer|min:0',
             'image'       => 'nullable|image|max:2048',
             'active'      => 'boolean',
-            'tva' => 'nullable|numeric|min:0|max:100',
-
+            'tva'         => 'nullable|numeric|min:0|max:100',
         ]);
 
         if ($request->hasFile('image')) {
@@ -79,16 +78,14 @@ class ProductController extends Controller
             'barcode'     => 'nullable|string|unique:products,barcode,' . $product->id,
             'description' => 'nullable|string',
             'price'       => 'sometimes|numeric|min:0',
-            'cost_price'  => 'nullable|numeric|min:0',
+            'cost_price'  => 'nullable|numeric|min:0|lt:price',
             'stock'       => 'sometimes|integer|min:0',
             'stock_alert' => 'nullable|integer|min:0',
             'image'       => 'nullable|image|max:2048',
             'active'      => 'boolean',
-            'tva'         => 'nullable|numeric|min:0|max:100',  // ← zid had s-satr
-
+            'tva'         => 'nullable|numeric|min:0|max:100',
         ]);
-
-        if ($request->hasFile('image')) {
+if ($request->hasFile('image')) {
             if ($product->image) Storage::disk('public')->delete($product->image);
             $data['image'] = $request->file('image')->store('products', 'public');
         }

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useLocation } from 'react-router-dom'
 import api from '../api/axios'
 import { useAuth } from '../context/AuthContext'
 
@@ -17,8 +18,16 @@ export default function ClientsPage() {
   const [search, setSearch]         = useState('')
   const [loading, setLoading]       = useState(false)
   const { isAdmin } = useAuth()
+  const location = useLocation()
 
   useEffect(() => { load() }, [search])
+
+  useEffect(() => {
+    if (location.state?.openCreditId && clients.length > 0) {
+      const client = clients.find(c => c.id === location.state.openCreditId)
+      if (client) openCreditModal(client)
+    }
+  }, [clients, location.state])
   const load = () => api.get('/clients', { params: { search: search || undefined } }).then(r => setClients(r.data))
   const openNew = () => { setForm(emptyForm); setEditId(null); setShowModal(true) }
   const openEdit = (c) => { setForm({ name: c.name, phone: c.phone || '', email: c.email || '', address: c.address || '', credit_limit: c.credit_limit }); setEditId(c.id); setShowModal(true) }

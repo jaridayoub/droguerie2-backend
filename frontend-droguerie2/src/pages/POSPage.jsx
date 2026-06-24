@@ -68,13 +68,13 @@ export default function POSPage() {
   const removeItem = (id) => setCart(prev => prev.filter(i => i.id !== id))
   const clearCart = () => { setCart([]); setClientId(''); setRemiseValue(''); setPaid(''); setNotes('') }
 
-  const subtotal  = cart.reduce((s, i) => s + getPrice(i) * i.qty, 0)
+  const subtotal  = Math.round(cart.reduce((s, i) => s + getPrice(i) * i.qty, 0) * 100) / 100
   const remiseNum = parseFloat(remiseValue) || 0
-  const remise    = remiseType === 'percent' ? subtotal * remiseNum / 100 : Math.min(remiseNum, subtotal)
-  const total     = Math.max(0, subtotal - remise)
-  const paidNum   = parseFloat(paid) || 0
-  const credit    = Math.max(0, total - paidNum)
-  const monnaie   = paidNum > total ? paidNum - total : 0
+  const remise    = Math.round((remiseType === 'percent' ? subtotal * remiseNum / 100 : Math.min(remiseNum, subtotal)) * 100) / 100
+  const total     = Math.round(Math.max(0, subtotal - remise) * 100) / 100
+  const paidNum   = Math.round((parseFloat(paid) || 0) * 100) / 100
+  const credit    = Math.round(Math.max(0, total - paidNum) * 100) / 100
+  const monnaie   = Math.round(Math.max(0, paidNum - total) * 100) / 100
 
   const validateSale = async () => {
     if (cart.length === 0) return showAlert('Le panier est vide !', 'warning')
@@ -167,7 +167,7 @@ export default function POSPage() {
             </div>
           </div>
 
-          <div className="row g-2" style={{ maxHeight: 'calc(100vh - 250px)', overflowY: 'auto' }}>
+          <div className="row g-2">
             {products.length === 0 && (
               <div className="col-12 text-center py-5" style={{ color: 'var(--tsk-muted)' }}>
                 <i className="bi bi-inbox d-block mb-2" style={{ fontSize: 40 }}></i>
@@ -175,18 +175,18 @@ export default function POSPage() {
               </div>
             )}
             {products.map(p => (
-              <div key={p.id} className="col-6 col-md-4 col-xl-3">
+              <div key={p.id} className="col-6 col-md-4 col-xl-4">
                 <div className={'card pos-product-card h-100 ' + (p.stock === 0 ? 'out-of-stock' : '')}
                   onClick={() => addToCart(p)}>
                   <div className="card-body p-2 text-center">
                     {p.image_url
-                      ? <img src={p.image_url} alt={p.name} style={{ height: 65, objectFit: 'cover', borderRadius: 8, width: '100%', marginBottom: 6 }} />
-                      : <div style={{ height: 65, background: 'var(--tsk-yellow-soft)', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 6 }}>
-                          <i className="bi bi-box-seam" style={{ fontSize: 24, color: 'var(--tsk-blue)' }}></i>
+                      ? <img src={p.image_url} alt={p.name} style={{ height: 110, objectFit: 'contain', borderRadius: 8, width: '100%', marginBottom: 8, background: 'var(--tsk-yellow-soft)', padding: 4 }} />
+                      : <div style={{ height: 110, background: 'var(--tsk-yellow-soft)', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 8 }}>
+                          <i className="bi bi-box-seam" style={{ fontSize: 36, color: 'var(--tsk-blue)' }}></i>
                         </div>
                     }
-                    <div className="fw-bold small text-truncate" style={{ color: 'var(--tsk-blue)', fontSize: 12 }}>{p.name}</div>
-                    <div className="product-price" style={{ fontSize: 14 }}>{(+p.price).toFixed(2)} DH</div>
+                    <div className="fw-bold text-truncate" style={{ color: 'var(--tsk-blue)', fontSize: 13 }}>{p.name}</div>
+                    <div className="product-price" style={{ fontSize: 15 }}>{(+p.price).toFixed(2)} DH</div>
                     <div className={'small ' + (p.low_stock ? 'text-danger fw-semibold' : '')} style={{ fontSize: 11, color: p.low_stock ? undefined : 'var(--tsk-muted)' }}>
                       Stock: {p.stock} {p.low_stock && <i className="bi bi-exclamation-triangle-fill"></i>}
                     </div>
@@ -199,7 +199,7 @@ export default function POSPage() {
 
         {/* ══ RIGHT: Cart ══ */}
         <div className="col-lg-5">
-          <div className="cart-panel no-print">
+          <div className="cart-panel no-print" style={{ position: 'sticky', top: 16, maxHeight: 'calc(100vh - 32px)', overflowY: 'auto' }}>
 
             <div className="cart-header">
               <h6>
@@ -277,12 +277,30 @@ export default function POSPage() {
                 </label>
                 <select className="form-select form-select-sm" value={clientId} onChange={e => setClientId(e.target.value)}>
                   <option value="">#000 — Client anonyme</option>
-                  {clients.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      #{String(c.id).padStart(3, '0')} — {c.name}{(+c.credit_used) > 0 ? ` — Crédit: ${(+c.credit_used).toFixed(2)} DH` : ''}
-                    </option>
-                  ))}
+                  {clients.map((c) => {
+                    const disponible = (+c.credit_limit) > 0 ? (+c.credit_limit) - (+c.credit_used) : null
+                    return (
+                      <option key={c.id} value={c.id}>
+                        #{String(c.id).padStart(3, '0')} — {c.name}
+                        {(+c.credit_used) > 0 ? ` — Crédit: ${(+c.credit_used).toFixed(2)} DH` : ''}
+                        {disponible !== null ? ` — Dispo: ${disponible.toFixed(2)} DH` : ''}
+                      </option>
+                    )
+                  })}
                 </select>
+                {clientId && (() => {
+                  const sel = clients.find(c => c.id === +clientId)
+                  if (!sel || (+sel.credit_limit) === 0) return null
+                  const disponible = (+sel.credit_limit) - (+sel.credit_used)
+                  const depasse = credit > 0 && credit > disponible
+                  return (
+                    <div className={`small mt-1 fw-bold ${depasse ? 'text-danger' : 'text-success'}`} style={{ fontSize: 11 }}>
+                      <i className={`bi me-1 ${depasse ? 'bi-exclamation-triangle-fill' : 'bi-shield-check'}`}></i>
+                      Plafond: {(+sel.credit_limit).toFixed(2)} DH — Disponible: {disponible.toFixed(2)} DH
+                      {depasse && ` — ⛔ Dépassement de ${(credit - disponible).toFixed(2)} DH`}
+                    </div>
+                  )
+                })()}
               </div>
 
               {/* Remise */}
@@ -339,7 +357,8 @@ export default function POSPage() {
                   <i className="bi bi-cash me-1" style={{ color: 'var(--tsk-yellow)' }}></i>Montant reçu (DH)
                 </label>
                 <input type="number" min={0} step="0.01" className="form-control form-control-sm"
-                  placeholder={total.toFixed(2)} value={paid} onChange={e => setPaid(e.target.value)} />
+                  placeholder={total.toFixed(2)} value={paid} onChange={e => setPaid(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') { if (!paid) setPaid(total.toFixed(2)); else validateSale(); } }} />
                 {paidNum > 0 && (
                   <div className={'small mt-1 fw-bold ' + (credit > 0 ? 'text-warning' : 'text-success')} style={{ fontSize: 12 }}>
                     <i className={'bi me-1 ' + (credit > 0 ? 'bi-hourglass-split' : 'bi-check-circle-fill')}></i>

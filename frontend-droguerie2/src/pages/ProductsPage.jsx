@@ -28,6 +28,10 @@ export default function ProductsPage() {
   const [products, setProducts] = useState([])
   const [categories, setCategories] = useState([])
   const [search, setSearch] = useState('')
+  const [filterCat, setFilterCat] = useState('')
+  const [filterStock, setFilterStock] = useState('')
+  const [priceMin, setPriceMin] = useState('')
+  const [priceMax, setPriceMax] = useState('')
   const [form, setForm] = useState(emptyForm)
   const [editId, setEditId] = useState(null)
   const [imageFile, setImageFile] = useState(null)
@@ -98,6 +102,11 @@ export default function ProductsPage() {
     if (editId) fd.append('_method', 'PUT')
 
     try {
+      if (form.cost_price && form.price && +form.cost_price >= +form.price) {
+        alert(`Prix d'achat (${form.cost_price} DH) doit être inférieur au prix de vente (${form.price} DH)`)
+        setLoading(false)
+        return
+      }
       await api.post(editId ? `/products/${editId}` : '/products', fd, {
         headers: { 'Content-Type': 'multipart/form-data' }
       })
@@ -144,42 +153,77 @@ export default function ProductsPage() {
         )}
       </div>
 
-      {/* --- SEARCH BAR --- */}
-      <div className="card border-0 shadow-sm mb-4 p-2 rounded-3">
-        <div className="input-group">
-          <span className="input-group-text bg-white border-0 text-muted"><i className="bi bi-search"></i></span>
-          <input 
-            className="form-control border-0 shadow-none" 
-            placeholder="Rechercher par nom ou code barre..." 
-            value={search} onChange={e => setSearch(e.target.value)}
-          />
-          { (search || catIdFromUrl) && (
-            <button className="btn btn-link text-muted text-decoration-none" onClick={clearFilter}>
-              Effacer les filtres
+      {/* --- FILTERS --- */}
+      <div className="card border-0 shadow-sm mb-4 p-3 rounded-3">
+        <div className="row g-2 align-items-end">
+          <div className="col-md-3">
+            <div className="input-group">
+              <span className="input-group-text bg-white border-0 text-muted"><i className="bi bi-search"></i></span>
+              <input className="form-control border-0 shadow-none" placeholder="Nom ou code barre..."
+                value={search} onChange={e => setSearch(e.target.value)} />
+            </div>
+          </div>
+          <div className="col-md-2">
+            <select className="form-select border-0 bg-light" value={filterCat} onChange={e => setFilterCat(e.target.value)}>
+              <option value="">Toutes catégories</option>
+              {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          </div>
+          <div className="col-md-2">
+            <select className="form-select border-0 bg-light" value={filterStock} onChange={e => setFilterStock(e.target.value)}>
+              <option value="">Tout le stock</option>
+              <option value="low">⚠️ Stock faible</option>
+              <option value="ok">✅ Stock OK</option>
+            </select>
+          </div>
+          <div className="col-md-2">
+            <input type="number" className="form-control border-0 bg-light" placeholder="Prix min (DH)"
+              value={priceMin} onChange={e => setPriceMin(e.target.value)} min={0} />
+          </div>
+          <div className="col-md-2">
+            <input type="number" className="form-control border-0 bg-light" placeholder="Prix max (DH)"
+              value={priceMax} onChange={e => setPriceMax(e.target.value)} min={0} />
+          </div>
+          <div className="col-md-1">
+            <button className="btn btn-outline-secondary w-100" title="Réinitialiser"
+              onClick={() => { setSearch(''); setFilterCat(''); setFilterStock(''); setPriceMin(''); setPriceMax(''); navigate('/products') }}>
+              <i className="bi bi-x-lg"></i>
             </button>
-          )}
+          </div>
         </div>
       </div>
 
       {/* --- TABLE --- */}
+      {(() => {
+        const filtered = products.filter(p => {
+          if (search && !p.name.toLowerCase().includes(search.toLowerCase()) && !(p.barcode || '').includes(search)) return false
+          if (filterCat && String(p.category_id) !== String(filterCat)) return false
+          if (filterStock === 'low' && p.stock > p.stock_alert) return false
+          if (filterStock === 'ok'  && p.stock <= p.stock_alert) return false
+          if (priceMin && +p.price < +priceMin) return false
+          if (priceMax && +p.price > +priceMax) return false
+          return true
+        })
+        return (
       <div className="card border-0 shadow-sm rounded-4 overflow-hidden">
         <div className="table-responsive">
           <table className="table table-hover align-middle mb-0">
             <thead className="bg-light">
               <tr className="small text-muted text-uppercase fw-bold">
-                {isAdmin() && <th className="ps-3"><input type="checkbox" checked={selected.length === products.length && products.length > 0} onChange={toggleAll} /></th>}
+                {isAdmin() && <th className="ps-3"><input type="checkbox" checked={selected.length === filtered.length && filtered.length > 0} onChange={() => setSelected(selected.length === filtered.length ? [] : filtered.map(p => p.id))} /></th>}
                 <th className="ps-4">Produit</th>
                 <th>Catégorie</th>
-                <th>Prix</th>
+                <th>Prix Vente</th>
+                {isAdmin() && <th>Prix Achat</th>}
                 <th>Stock</th>
                 <th className="text-end pe-4">Actions</th>
               </tr>
             </thead>
             <tbody>
-              {products.length === 0 ? (
-                <tr><td colSpan="6" className="text-center py-5 text-muted">Aucun produit trouvé.</td></tr>
+              {filtered.length === 0 ? (
+                <tr><td colSpan="7" className="text-center py-5 text-muted">Aucun produit trouvé.</td></tr>
               ) : (
-                products.map(p => (
+                filtered.map(p => (
                   <tr key={p.id}>
                     {isAdmin() && <td className="ps-3"><input type="checkbox" checked={selected.includes(p.id)} onChange={() => toggleSelect(p.id)} /></td>}
                     <td className="ps-4">
@@ -190,6 +234,7 @@ export default function ProductsPage() {
                     </td>
                     <td><span className="badge bg-light text-dark border">{p.category?.name}</span></td>
                     <td className="fw-bold text-primary">{parseFloat(p.price).toFixed(2)} DH</td>
+                    {isAdmin() && <td className="fw-bold" style={{ color: '#198754' }}>{p.cost_price > 0 ? `${parseFloat(p.cost_price).toFixed(2)} DH` : <span className="text-muted">—</span>}</td>}
                     <td>
                       <span className={`badge ${p.stock <= p.stock_alert ? 'bg-danger-subtle text-danger' : 'bg-success-subtle text-success'}`}>
                         {p.stock} unités
@@ -206,6 +251,8 @@ export default function ProductsPage() {
           </table>
         </div>
       </div>
+        )
+      })()}
 
       {/* --- MODAL --- */}
       {showModal && (
@@ -238,7 +285,11 @@ export default function ProductsPage() {
                   </div>
                   <div className="col-md-4">
                     <label className="form-label small fw-bold">Prix d'Achat</label>
-                    <input type="number" step="0.01" className="form-control bg-light border-0" value={form.cost_price} onChange={e => setForm({...form, cost_price: e.target.value})} />
+                    <input type="number" step="0.01" className={`form-control bg-light border-0 ${form.cost_price && form.price && +form.cost_price >= +form.price ? 'is-invalid' : ''}`}
+                      value={form.cost_price} onChange={e => setForm({...form, cost_price: e.target.value})} />
+                    {form.cost_price && form.price && +form.cost_price >= +form.price && (
+                      <div className="invalid-feedback">Prix d'achat doit être inférieur au prix de vente ({form.price} DH)</div>
+                    )}
                   </div>
                   <div className="col-md-4">
                     <label className="form-label small fw-bold">TVA (%)</label>
